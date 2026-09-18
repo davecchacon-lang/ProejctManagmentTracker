@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getUser, handleAuthCallback, login, logout, signup, type User } from "@netlify/identity";
-import { CalendarDays, CheckCircle2, ChevronRight, Clock3, FolderKanban, Gauge, ListChecks, Plus, Search, Settings2, Sparkles, Tag, TicketCheck, Users } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronRight, Clock3, FolderKanban, Gauge, History, ListChecks, Plus, Search, Settings2, Sparkles, Tag, TicketCheck, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ type Step = { id: number; projectId: number; title: string; status: string; assi
 type Task = { id: number; title: string; project: string; owner: string; due: string; status: string; impact: number };
 type Ticket = { id: number; kind: "request" | "issue" | "idea"; title: string; description: string; priority: string; status: string; requester: string; owner: string; created: string };
 type TicketKind = "request" | "issue" | "idea";
+type ActivityEntry = { id: number; action: string; entityType: string; entityName: string; actor: string; createdAt: string };
 
 const nav: [string, string, React.ElementType][] = [
   ["dashboard", "Dashboard", Gauge],
@@ -25,6 +26,7 @@ const nav: [string, string, React.ElementType][] = [
   ["projects", "Projects", FolderKanban],
   ["calendar", "Calendar", CalendarDays],
   ["tickets", "Tickets", TicketCheck],
+  ["activity", "Activity", History],
 ];
 
 const statusColor: Record<string, string> = { "On track": "#2c8b74", Watch: "#d39a38", "At risk": "#d05d59" };
@@ -85,6 +87,7 @@ function WorkspaceApp({ identity }: { identity: User }) {
   const [steps, setSteps] = useState<Step[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
@@ -113,6 +116,14 @@ function WorkspaceApp({ identity }: { identity: User }) {
       .catch(() => setLoaded(true));
   }, []);
 
+  useEffect(() => {
+    if (view !== "activity") return;
+    fetch("/api/activity")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setActivity(d?.activity || []))
+      .catch(() => undefined);
+  }, [view]);
+
   const filteredProjects = projects.filter((p) => (p.name + p.category + p.owner).toLowerCase().includes(query.toLowerCase()));
   const openTasks = tasks.filter((t) => t.status !== "done").sort((a, b) => b.impact - a.impact);
   const doneTasks = tasks.filter((t) => t.status === "done");
@@ -125,6 +136,24 @@ function WorkspaceApp({ identity }: { identity: User }) {
     const status = task.status === "done" ? "open" : "done";
     setTasks((x) => x.map((t) => (t.id === task.id ? { ...t, status } : t)));
     fetch("/api/tasks/" + task.id, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) }).catch(() => undefined);
+  }
+
+  async function deleteTask(task: Task) {
+    if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return;
+    const r = await fetch("/api/tasks/" + task.id, { method: "DELETE" });
+    if (r.ok) { setTasks((x) => x.filter((t) => t.id !== task.id)); toast("Task deleted"); }
+    else toast.error("Could not delete task");
+  }
+
+  async function deleteProject(project: Project) {
+    if (!window.confirm(`Delete "${project.name}" and all its steps? This can't be undone.`)) return;
+    const r = await fetch("/api/projects/" + project.id, { method: "DELETE" });
+    if (r.ok) {
+      setProjects((x) => x.filter((p) => p.id !== project.id));
+      setSteps((x) => x.filter((s) => s.projectId !== project.id));
+      setSelected((s) => (s && s.id === project.id ? null : s));
+      toast("Project deleted");
+    } else toast.error("Could not delete project");
   }
 
   async function createProject() {
@@ -257,11 +286,11 @@ function WorkspaceApp({ identity }: { identity: User }) {
           ) : view === "my-work" ? (
             <>
               <PageHead eyebrow="Your day" title="My work" subtitle="Everything actionable, in one list." action={<Button onClick={() => setTaskOpen(true)}><Plus />Add task</Button>} />
-              <TaskList tasks={openTasks} toggle={toggleTask} emptyText="Nothing open — you're clear." />
+              <TaskList tasks={openTasks} toggle={toggleTask} onDelete={deleteTask} emptyText="Nothing open — you're clear." />
               {doneTasks.length > 0 && (
                 <div className="waiting-block">
                   <div className="section-title"><h2>Completed</h2></div>
-                  <TaskList tasks={doneTasks} toggle={toggleTask} emptyText="" />
+                  <TaskList tasks={doneTasks} toggle={toggleTask} onDelete={deleteTask} emptyText="" />
                 </div>
               )}
             </>
@@ -284,6 +313,8 @@ function WorkspaceApp({ identity }: { identity: User }) {
             </>
           ) : view === "calendar" ? (
             <CalendarView tasks={tasks} projects={projects} />
+          ) : view === "activity" ? (
+            <ActivityView activity={activity} />
           ) : (
             <>
               <PageHead eyebrow="Intake queue" title="Tickets" subtitle="Requests, issues, and ideas in one place." action={<Button onClick={() => setTicketOpen(true)}><Plus />New {kindLabel[ticketKind].toLowerCase()}</Button>} />
@@ -310,7 +341,7 @@ function WorkspaceApp({ identity }: { identity: User }) {
         </main>
       </div>
 
-      <ProjectDrawer project={selected} setProject={setSelected} steps={steps} onToggleStep={toggleStep} onAddStep={() => setStepOpen(true)} onProgress={updateProjectProgress} onStatus={updateProjectStatus} />
+      <ProjectDrawer project={selected} setProject={setSelected} steps={steps} onToggleStep={toggleStep} onAddStep={() => setStepOpen(true)} onProgress={updateProjectProgress} onStatus={updateProjectStatus} onDelete={deleteProject} />
 
       <Dialog open={projectOpen} onOpenChange={setProjectOpen}>
         <DialogContent>
@@ -405,7 +436,7 @@ function Health({ value }: { value: string }) {
   return <span className={"health health-" + value.replace(" ", "-").toLowerCase()}><i />{value}</span>;
 }
 
-function TaskList({ tasks, toggle, emptyText }: { tasks: Task[]; toggle: (t: Task) => void; emptyText: string }) {
+function TaskList({ tasks, toggle, onDelete, emptyText }: { tasks: Task[]; toggle: (t: Task) => void; onDelete: (t: Task) => void; emptyText: string }) {
   if (!tasks.length) return emptyText ? <div className="empty-plan"><CheckCircle2 /><strong>{emptyText}</strong></div> : null;
   return (
     <div className="task-list">
@@ -418,16 +449,18 @@ function TaskList({ tasks, toggle, emptyText }: { tasks: Task[]; toggle: (t: Tas
             <div className="task-meta"><span><Users />{t.owner}</span><span><Clock3 />{t.due}</span></div>
           </div>
           {t.impact > 0 && <div className={"impact " + (t.impact >= 3 ? "impact-high" : "")}><Users /><strong>{t.impact}</strong><span>impact</span></div>}
+          <button className="row-arrow" style={{ gridColumn: 4 }} onClick={() => onDelete(t)} aria-label="Delete task"><Trash2 /></button>
         </article>
       ))}
     </div>
   );
 }
 
-function ProjectDrawer({ project, setProject, steps, onToggleStep, onAddStep, onProgress, onStatus }: {
+function ProjectDrawer({ project, setProject, steps, onToggleStep, onAddStep, onProgress, onStatus, onDelete }: {
   project: Project | null; setProject: (p: Project | null) => void; steps: Step[];
   onToggleStep: (s: Step) => void; onAddStep: () => void;
   onProgress: (p: Project, v: number) => void; onStatus: (p: Project, v: string) => void;
+  onDelete: (p: Project) => void;
 }) {
   return (
     <Sheet open={!!project} onOpenChange={(v) => !v && setProject(null)}>
@@ -460,10 +493,36 @@ function ProjectDrawer({ project, setProject, steps, onToggleStep, onAddStep, on
               ))}
               {!steps.filter((s) => s.projectId === project.id).length && <div className="empty-plan"><CheckCircle2 /><strong>No steps yet</strong><span>Add the first one.</span></div>}
             </div>
+            <Button variant="destructive" size="sm" style={{ marginTop: 24 }} onClick={() => onDelete(project)}><Trash2 />Delete project</Button>
           </>
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function ActivityView({ activity }: { activity: ActivityEntry[] }) {
+  function when(iso: string) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  return (
+    <>
+      <PageHead eyebrow="Audit trail" title="Activity" subtitle="Who added and removed what." />
+      <section className="panel activity-panel">
+        {activity.map((a) => (
+          <div className="activity" key={a.id}>
+            <span className={a.action === "deleted" ? "amber" : "blue"}>{a.action === "deleted" ? <Trash2 /> : <Plus />}</span>
+            <div>
+              <strong>{a.actor} {a.action} {a.entityType} “{a.entityName}”</strong>
+              <small>{when(a.createdAt)}</small>
+            </div>
+          </div>
+        ))}
+        {!activity.length && <div className="empty-plan"><History /><strong>No activity yet</strong><span>Creates and deletes will show up here.</span></div>}
+      </section>
+    </>
   );
 }
 
