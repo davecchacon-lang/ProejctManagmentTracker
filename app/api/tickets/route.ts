@@ -1,6 +1,7 @@
 import { getDb } from "@/db";
 import { tickets } from "@/db/schema";
 import { requireUser } from "@/lib/access";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(request: Request) {
   try {
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
         created: "Today",
       })
       .returning();
+    await logActivity("created", "ticket", ticket.title, identity.name);
     return Response.json({ ticket }, { status: 201 });
   } catch (error) {
     console.error(error);
