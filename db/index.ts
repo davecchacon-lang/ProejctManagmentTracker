@@ -50,6 +50,14 @@ async function ensureSchema(db: { execute: (query: ReturnType<typeof sql>) => Pr
     owner text NOT NULL DEFAULT 'Unassigned',
     created text NOT NULL DEFAULT 'Today'
   )`);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS activity_log (
+    id serial PRIMARY KEY,
+    action text NOT NULL,
+    entity_type text NOT NULL,
+    entity_name text NOT NULL,
+    actor text NOT NULL,
+    created_at text NOT NULL
+  )`);
 }
 
 export async function getDb() {
