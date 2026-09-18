@@ -1,10 +1,11 @@
 import { getDb } from "@/db";
 import { tasks } from "@/db/schema";
 import { requireUser } from "@/lib/access";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(request: Request) {
   try {
-    await requireUser();
+    const identity = await requireUser();
     const p = (await request.json()) as Record<string, unknown>;
     if (!String(p.title ?? "").trim()) return Response.json({ error: "Title is required" }, { status: 400 });
     const db = await getDb();
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
         impact: Number(p.impact ?? 0),
       })
       .returning();
+    await logActivity("created", "task", task.title, identity.name);
     return Response.json({ task }, { status: 201 });
   } catch (error) {
     console.error(error);
