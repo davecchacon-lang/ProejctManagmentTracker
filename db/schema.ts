@@ -44,3 +44,12 @@ export const tickets = pgTable("tickets", {
   owner: text("owner").notNull().default("Unassigned"),
   created: text("created").notNull().default("Today"),
 });
+
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(), // "created" | "deleted"
+  entityType: text("entity_type").notNull(), // "project" | "task" | "step" | "ticket"
+  entityName: text("entity_name").notNull(),
+  actor: text("actor").notNull(),
+  createdAt: text("created_at").notNull(),
+});
