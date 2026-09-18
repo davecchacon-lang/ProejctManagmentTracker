@@ -1,10 +1,11 @@
 import { getDb } from "@/db";
 import { projectSteps } from "@/db/schema";
 import { requireUser } from "@/lib/access";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(request: Request) {
   try {
-    await requireUser();
+    const identity = await requireUser();
     const p = (await request.json()) as Record<string, unknown>;
     if (!p.projectId || !String(p.title ?? "").trim()) return Response.json({ error: "Project and step title are required" }, { status: 400 });
     const db = await getDb();
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
         position: Number(p.position ?? 0),
       })
       .returning();
+    await logActivity("created", "step", step.title, identity.name);
     return Response.json({ step }, { status: 201 });
   } catch (error) {
     console.error(error);
